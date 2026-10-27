@@ -106,22 +106,28 @@ describe('ApifyScrapingAgent', () => {
   it('maps LinkedIn lead results from Apify output', async () => {
     configureMockClient([
       {
+        resultType: 'profile',
         fullName: 'Jane Doe',
-        headline: 'CEO',
-        company: 'Acme',
-        url: 'https://www.linkedin.com/in/janedoe',
-        location: 'Budapest',
-        email: 'jane@acme.test',
+        headline: 'CEO at Acme',
+        currentTitle: 'CEO',
+        currentCompany: 'Acme',
+        profileUrl: 'https://www.linkedin.com/in/janedoe',
+        locationLocality: 'Budapest',
+        locationCountry: 'Hungary',
+      },
+      {
+        resultType: 'error',
+        errorMessage: 'Profile enrichment failed',
       },
     ]);
 
     const agent = await createAgent();
     const result = await agent.linkedinLeads('https://www.linkedin.com/search/results/people/?keywords=CEO', 2);
 
-    expect(apifyMocks.actor).toHaveBeenCalledWith('apify/linkedin-profile-scraper');
+    expect(apifyMocks.actor).toHaveBeenCalledWith('johnvc/linkedin-people-search-api');
     expect(apifyMocks.actorCall).toHaveBeenCalledWith({
-      startUrls: [{ url: 'https://www.linkedin.com/search/results/people/?keywords=CEO' }],
-      maxItems: 2,
+      keywords: 'CEO',
+      maxResults: 2,
     });
     expect(result).toEqual([
       {
@@ -130,7 +136,6 @@ describe('ApifyScrapingAgent', () => {
         company: 'Acme',
         url: 'https://www.linkedin.com/in/janedoe',
         location: 'Budapest',
-        email: 'jane@acme.test',
       },
     ]);
   });
