@@ -69,7 +69,7 @@
       "name": "Apify LinkedIn Profile",
       "source": "apify_linkedin",
       "type": "apify",
-      "actor_id": "apify/linkedin-profile-scraper",
+      "actor_id": "johnvc/linkedin-people-search-api",
       "query": "https://www.linkedin.com/in/satyanadella/",
       "limit": 5,
       "enabled": true
