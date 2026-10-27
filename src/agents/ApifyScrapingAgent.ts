@@ -68,13 +68,13 @@ type ApifyGoogleItem = ApifyResultItem & {
 
 type ApifyLinkedInItem = ApifyResultItem & {
   fullName?: unknown;
-  name?: unknown;
   headline?: unknown;
-  title?: unknown;
-  company?: unknown;
-  url?: unknown;
-  location?: unknown;
-  email?: unknown;
+  currentTitle?: unknown;
+  currentCompany?: unknown;
+  profileUrl?: unknown;
+  locationLocality?: unknown;
+  locationCountry?: unknown;
+  errorMessage?: unknown;
 };
 
 type ApifyEcommerceItem = ApifyResultItem & {
@@ -144,6 +144,43 @@ function normalizeArrayResult(result: unknown): unknown[] {
 
 function extractFirstUrl(text: string): string | undefined {
   return text.match(/https?:\/\/[^\s]+/)?.[0];
+}
+
+// LinkedIn keresési URL paraméterei → actor input mezők
+const LINKEDIN_SEARCH_PARAMS: Array<[string, string]> = [
+  ['keywords', 'keywords'],
+  ['firstName', 'firstName'],
+  ['lastName', 'lastName'],
+  ['title', 'jobTitle'],
+  ['company', 'company'],
+  ['school', 'school'],
+];
+
+function buildLinkedInSearchInput(search: string, limit: number): Record<string, unknown> {
+  let params: URLSearchParams | undefined;
+  try {
+    params = new URL(search).searchParams;
+  } catch {
+    params = undefined;
+  }
+
+  const input: Record<string, unknown> = {};
+  if (params) {
+    for (const [param, field] of LINKEDIN_SEARCH_PARAMS) {
+      const value = readText(params.get(param));
+      if (value) {
+        input[field] = value;
+      }
+    }
+  } else if (readText(search)) {
+    input.keywords = readText(search);
+  }
+
+  if (Object.keys(input).length === 0) {
+    throw new Error('LinkedIn kereséshez kulcsszó vagy keresési URL kell (pl. ?keywords=CEO)');
+  }
+
+  return { ...input, maxResults: limit };
 }
 
 export class ApifyScrapingAgent implements IAgent {
@@ -230,19 +267,26 @@ export class ApifyScrapingAgent implements IAgent {
     try {
       logWarn(this.name, 'LinkedIn scraping cookie-t igényel - lásd Apify dokumentáció');
       
-      const items = await this.runActor<ApifyLinkedInItem>('apify/linkedin-profile-scraper', {
-        startUrls: [{ url: searchUrl }],
-        maxItems: limit,
-      });
+      const items = await this.runActor<ApifyLinkedInItem>(
+        'johnvc/linkedin-people-search-api',
+        buildLinkedInSearchInput(searchUrl, limit),
+      );
 
-      return items.map((item) => ({
-        name: readText(item.fullName) ?? readText(item.name) ?? 'Névtelen',
-        title: readText(item.headline) ?? readText(item.title),
-        company: readText(item.company),
-        url: readText(item.url) ?? searchUrl,
-        location: readText(item.location),
-        email: readText(item.email),
-      }));
+      return items
+        .filter((item) => {
+          const errorMessage = readText(item.errorMessage);
+          if (errorMessage) {
+            logWarn(this.name, `LinkedIn keresés hiba: ${errorMessage}`);
+          }
+          return !errorMessage;
+        })
+        .map((item) => ({
+          name: readText(item.fullName) ?? 'Névtelen',
+          title: readText(item.currentTitle) ?? readText(item.headline),
+          company: readText(item.currentCompany),
+          url: readText(item.profileUrl) ?? searchUrl,
+          location: readText(item.locationLocality) ?? readText(item.locationCountry),
+        }));
     } catch (error) {
       logError(this.name, `LinkedIn leads hiba: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
@@ -348,7 +392,7 @@ export class ApifyScrapingAgent implements IAgent {
       }
       // LinkedIn Leads
       else if (capability === 'linkedin' || taskLower.includes('linkedin') || taskLower.includes('lead')) {
-        const url = readText(ctx.url) ?? extractFirstUrl(task) ?? '';
+        const url = readText(ctx.url) ?? extractFirstUrl(task) ?? readText(ctx.query) ?? '';
         const limit = readNumber(ctx.limit) ?? 10;
         result = await this.linkedinLeads(url, limit);
         resultType = 'linkedin_leads';
